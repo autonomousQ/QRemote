@@ -9,4 +9,4 @@ netstat -ano | findstr :5000
 
 Write-Host "---"
 Write-Host "STATUS: Activity Log..."
-Get-Content -Path remote_shutdown.log | Measure-Object -Line
+Get-Content -Path QRemote.log | Measure-Object -Line
