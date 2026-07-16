@@ -19,8 +19,14 @@ if ($LASTEXITCODE -ne 0) { throw "pip install failed — is Python in PATH?" }
 Write-Host "  requirements installed." -ForegroundColor Green
 
 # ── 2. Scheduled task: RemoteShutdown ────────────────────────────────────────
+# NOTE: these tasks run as the *interactive user*, NOT SYSTEM. The bot process
+# (QRemoteBotStart) runs non-elevated as this same user, and a standard-user
+# process cannot trigger a SYSTEM-owned task ("Access is denied"). Running the
+# task as the user — who already holds SeShutdownPrivilege — lets the bot fire
+# it via `schtasks /run` while still shutting the machine down reliably.
 Write-Step 2 "Creating scheduled task: RemoteShutdown"
-$principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -RunLevel Highest
+$currentUser = "$env:USERDOMAIN\$env:USERNAME"
+$principal = New-ScheduledTaskPrincipal -UserId $currentUser -LogonType Interactive -RunLevel Highest
 $settings  = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 2)
 
 Register-ScheduledTask `
@@ -29,7 +35,7 @@ Register-ScheduledTask `
     -Settings  $settings `
     -Principal $principal `
     -Force | Out-Null
-Write-Host "  RemoteShutdown task created (runs as SYSTEM)." -ForegroundColor Green
+Write-Host "  RemoteShutdown task created (runs as $currentUser)." -ForegroundColor Green
 
 # ── 3. Scheduled task: RemoteReboot ──────────────────────────────────────────
 Write-Step 3 "Creating scheduled task: RemoteReboot"
@@ -39,7 +45,7 @@ Register-ScheduledTask `
     -Settings  $settings `
     -Principal $principal `
     -Force | Out-Null
-Write-Host "  RemoteReboot task created (runs as SYSTEM)." -ForegroundColor Green
+Write-Host "  RemoteReboot task created (runs as $currentUser)." -ForegroundColor Green
 
 # ── 4. .env credentials ───────────────────────────────────────────────────────
 Write-Step 4 "Configuring environment (.env)"
@@ -66,13 +72,13 @@ if (-not (Test-Path $LogFile)) {
 
 # ── 6. Scheduled task: auto-start bot at logon ───────────────────────────────
 Write-Step 6 "Creating scheduled task: QRemoteBotStart"
-$serverCmd    = Join-Path $ProjectDir "server.cmd"
+$serverVbs    = Join-Path $ProjectDir "server_hidden.vbs"
 
 $currentUser  = "$env:USERDOMAIN\$env:USERNAME"
 $botPrincipal = New-ScheduledTaskPrincipal -UserId $currentUser -RunLevel Limited
 $botTrigger   = New-ScheduledTaskTrigger -AtLogOn -User $currentUser
-$botAction    = New-ScheduledTaskAction -Execute "cmd.exe" `
-                    -Argument "/c `"$serverCmd`"" `
+$botAction    = New-ScheduledTaskAction -Execute "wscript.exe" `
+                    -Argument "`"$serverVbs`"" `
                     -WorkingDirectory $ProjectDir
 $botSettings  = New-ScheduledTaskSettingsSet `
                     -ExecutionTimeLimit ([TimeSpan]::Zero) `

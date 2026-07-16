@@ -34,8 +34,8 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 The script will:
 - Install Python requirements (`flask`, `requests`, `python-dotenv`)
-- Create the **RemoteShutdown** scheduled task (runs `shutdown /s /t 60` as SYSTEM)
-- Create the **RemoteReboot** scheduled task (runs `shutdown /r /t 60` as SYSTEM)
+- Create the **RemoteShutdown** scheduled task (runs `shutdown /s /t 60` as the current user)
+- Create the **RemoteReboot** scheduled task (runs `shutdown /r /t 60` as the current user)
 - Prompt you to enter your bot token and user ID, then write `.env`
 - Create the log file at `C:\projects\telegram\remote_shutdown.log`
 

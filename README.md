@@ -65,6 +65,30 @@ See **[SETUP.md](SETUP.md)** for the full walkthrough, including named tunnel se
 
 ---
 
+## Important: Run Setup as the Account That Stays Logged In
+
+`setup.ps1` registers `RemoteShutdown`, `RemoteReboot`, and `QRemoteBotStart` to run as **whichever Windows account is running the script** (`$env:USERNAME`), not as SYSTEM. This means:
+
+- **Run `setup.ps1` while logged in as the account you normally use day to day** — the same account that will be logged in when you want to control the PC remotely. If an admin/IT account sets this up for a different standard-user account, the tasks will be bound to the wrong user and `/shutdown`, `/reboot`, and other Remote* commands will fail with "Access is denied".
+- **QRemoteBotStart only starts at logon**, so the bot (and its ability to trigger tasks) is only running while that account has an active session. If the PC reboots and nobody logs in, the bot won't come back online and you won't be able to reach it remotely — even to send `/status`.
+
+### Enable auto-login so the bot survives a reboot
+
+Since the bot depends on your account being logged in, set up passwordless auto-login so a reboot (including one triggered by `/reboot` itself) doesn't strand you without remote access:
+
+```powershell
+netplwiz
+```
+
+1. Uncheck **"Users must enter a user name and password to use this computer"**.
+2. Click **Apply** — a credentials prompt appears.
+3. Enter your account's password (or leave blank if the account has no password) and confirm.
+4. Click **OK**.
+
+Windows will now sign the account in automatically at boot, `QRemoteBotStart` fires, and the bot re-establishes its tunnel and Telegram webhook without you touching the keyboard.
+
+---
+
 ## Tunnel Automation
 
 When `server.py` starts it calls `start_tunnel()`, which automates the entire Cloudflare → Telegram wiring:
@@ -111,7 +135,7 @@ Cloudflare Tunnel  ──►  localhost:5000  (server.py / Flask)
                     ┌───────────┴──────────────────────────┐
                     ▼                ▼              ▼
              RemoteShutdown   RemoteReboot   RemoteWinver …
-             (SYSTEM)         (SYSTEM)       (SYSTEM)
+             (current user)   (current user) (current user)
 ```
 
 ---
@@ -121,6 +145,8 @@ Cloudflare Tunnel  ──►  localhost:5000  (server.py / Flask)
 ```
 C:\Projects\QRemote\
 ├── server.py               Flask webhook server
+├── server.cmd              Launches server.py (python server.py)
+├── server_hidden.vbs       Runs server.cmd with no console window (used by QRemoteBotStart)
 ├── setup.ps1               One-time setup script (run as Administrator)
 ├── requirements.txt        Python dependencies
 ├── .env                    Bot token + allowed user ID (created by setup.ps1)
@@ -136,7 +162,7 @@ C:\Projects\QRemote\
 ## Security
 
 - **Single-user auth** — only the Telegram user ID in `.env` can issue commands. All other senders are silently rejected and logged.
-- **No admin Flask process** — the Flask server triggers pre-created SYSTEM-level tasks via `schtasks /run` rather than calling privileged executables directly, so the server process needs no elevated privileges.
+- **No admin Flask process** — the Flask server triggers pre-created Task Scheduler tasks via `schtasks /run` rather than calling privileged executables directly, so the server process needs no elevated privileges. Tasks run as the current user (who holds shutdown rights), so the non-elevated bot can trigger them — see [Run Setup as the Account That Stays Logged In](#important-run-setup-as-the-account-that-stays-logged-in).
 - **Credentials never in code** — bot token and user ID live in `.env` (excluded from version control via `.gitignore`).
 - **JSON audit log** — every accepted command and every rejected request is recorded with a UTC timestamp to `QRemote.log`.
 
