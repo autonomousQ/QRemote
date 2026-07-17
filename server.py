@@ -17,7 +17,7 @@ app = Flask(__name__)
 
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 ALLOWED_USER_ID = int(os.environ["TELEGRAM_USER_ID"])
-LOG_PATH = r"C:\projects\QRemote\QRemote.log"
+LOG_PATH = r".\QRemote.log"
 
 HELP_TEXT = (
     "QRemote Bot\n\n"
