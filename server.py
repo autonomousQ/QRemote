@@ -6,7 +6,7 @@ import socket
 import subprocess
 import time
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, request, abort
 import requests
 from dotenv import load_dotenv
@@ -35,8 +35,12 @@ HELP_TEXT = (
 
 class _JsonHandler(logging.FileHandler):
     def emit(self, record):
+        now = datetime.now().astimezone()
+        # Pacific-specific: astimezone() gives a fixed-offset tzinfo with no
+        # .dst() info, so derive PDT/PST from the UTC offset itself.
+        tz_abbr = "PDT" if now.utcoffset() == timedelta(hours=-7) else "PST"
         entry = {
-            "timestamp": datetime.now().astimezone().isoformat(),
+            "timestamp": now.strftime(f"%y-%m-%d %I:%M:%S%p {tz_abbr}"),
             "level": record.levelname,
             "message": record.getMessage(),
         }
