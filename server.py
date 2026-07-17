@@ -6,7 +6,7 @@ import socket
 import subprocess
 import time
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from flask import Flask, request, abort
 import requests
 from dotenv import load_dotenv
@@ -36,7 +36,7 @@ HELP_TEXT = (
 class _JsonHandler(logging.FileHandler):
     def emit(self, record):
         entry = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now().astimezone().isoformat(),
             "level": record.levelname,
             "message": record.getMessage(),
         }
