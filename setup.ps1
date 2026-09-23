@@ -10,19 +10,19 @@ function Write-Step([int]$n, [string]$msg) {
     Write-Host "`n[$n/6] $msg" -ForegroundColor Yellow
 }
 
-Write-Host "`n=== QRemote — Setup ===" -ForegroundColor Cyan
+Write-Host "`n=== QRemote - Setup ===" -ForegroundColor Cyan
 
-# ── 1. Python requirements ────────────────────────────────────────────────────
+# -- 1. Python requirements ------------------------------------------------
 Write-Step 1 "Installing Python requirements"
 pip install -r "$ProjectDir\requirements.txt"
-if ($LASTEXITCODE -ne 0) { throw "pip install failed — is Python in PATH?" }
+if ($LASTEXITCODE -ne 0) { throw "pip install failed - is Python in PATH?" }
 Write-Host "  requirements installed." -ForegroundColor Green
 
-# ── 2. Scheduled task: RemoteShutdown ────────────────────────────────────────
+# -- 2. Scheduled task: RemoteShutdown --------------------------------------
 # NOTE: these tasks run as the *interactive user*, NOT SYSTEM. The bot process
 # (QRemoteBotStart) runs non-elevated as this same user, and a standard-user
 # process cannot trigger a SYSTEM-owned task ("Access is denied"). Running the
-# task as the user — who already holds SeShutdownPrivilege — lets the bot fire
+# task as the user - who already holds SeShutdownPrivilege - lets the bot fire
 # it via `schtasks /run` while still shutting the machine down reliably.
 Write-Step 2 "Creating scheduled task: RemoteShutdown"
 $currentUser = "$env:USERDOMAIN\$env:USERNAME"
@@ -37,7 +37,7 @@ Register-ScheduledTask `
     -Force | Out-Null
 Write-Host "  RemoteShutdown task created (runs as $currentUser)." -ForegroundColor Green
 
-# ── 3. Scheduled task: RemoteReboot ──────────────────────────────────────────
+# -- 3. Scheduled task: RemoteReboot ----------------------------------------
 Write-Step 3 "Creating scheduled task: RemoteReboot"
 Register-ScheduledTask `
     -TaskName  "RemoteReboot" `
@@ -47,10 +47,10 @@ Register-ScheduledTask `
     -Force | Out-Null
 Write-Host "  RemoteReboot task created (runs as $currentUser)." -ForegroundColor Green
 
-# ── 4. .env credentials ───────────────────────────────────────────────────────
+# -- 4. .env credentials -----------------------------------------------------
 Write-Step 4 "Configuring environment (.env)"
 if (Test-Path $EnvFile) {
-    Write-Host "  .env already exists — skipping." -ForegroundColor Gray
+    Write-Host "  .env already exists - skipping." -ForegroundColor Gray
 } else {
     $token  = Read-Host "  Telegram Bot Token (from @BotFather)"
     $userId = Read-Host "  Your Telegram User ID  (from @userinfobot)"
@@ -61,7 +61,7 @@ TELEGRAM_USER_ID=$userId
     Write-Host "  .env written." -ForegroundColor Green
 }
 
-# ── 5. Log file ───────────────────────────────────────────────────────────────
+# -- 5. Log file --------------------------------------------------------------
 Write-Step 5 "Initialising log file"
 if (-not (Test-Path $LogFile)) {
     New-Item -ItemType File -Path $LogFile | Out-Null
@@ -70,7 +70,7 @@ if (-not (Test-Path $LogFile)) {
     Write-Host "  Log file already exists." -ForegroundColor Gray
 }
 
-# ── 6. Scheduled task: auto-start bot at logon ───────────────────────────────
+# -- 6. Scheduled task: auto-start bot at logon -----------------------------
 Write-Step 6 "Creating scheduled task: QRemoteBotStart"
 $serverVbs    = Join-Path $ProjectDir "server_hidden.vbs"
 
@@ -94,7 +94,7 @@ Register-ScheduledTask `
     -Force | Out-Null
 Write-Host "  QRemoteBotStart task created (runs at logon, restarts on failure)." -ForegroundColor Green
 
-# ── Done ──────────────────────────────────────────────────────────────────────
+# -- Done ---------------------------------------------------------------------
 Write-Host "`n=== Setup complete! ===" -ForegroundColor Cyan
 Write-Host @"
 
@@ -103,7 +103,7 @@ Next steps
 1. Install Cloudflare Tunnel (skip if already installed):
      winget install Cloudflare.cloudflared
 
-2. Start the bot — tunnel + webhook registration happen automatically:
+2. Start the bot - tunnel + webhook registration happen automatically:
      python "$ServerScript"
 
    On first message you will receive "Bot online. Tunnel: https://xxx.trycloudflare.com"
