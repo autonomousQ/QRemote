@@ -27,6 +27,7 @@ Sends commands through a **Cloudflare Tunnel** to a local **Flask webhook server
 | `/reboot` | Schedules a reboot in 60 seconds |
 | `/cancel` | Aborts the pending shutdown or reboot |
 | `/status` | Confirms the bot is online |
+| `/sensors` | Current CPU/GPU usage and temperature, plus a link to a last-hour chart page (CPU temp needs [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) running as admin with Options → Remote Web Server → Run enabled) |
 | `/tasks` | Lists all `Remote*` Task Scheduler tasks and their bot commands |
 | `/help` | Shows this command list |
 | `/<name>` | Runs any `Remote<Name>` task you created (e.g. `/winver` → `RemoteWinver`) |
