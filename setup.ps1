@@ -66,13 +66,13 @@ if (-not (Test-Path $LogFile)) {
 
 # ── 6. Scheduled task: auto-start bot at logon ───────────────────────────────
 Write-Step 6 "Creating scheduled task: QRemoteBotStart"
-$serverCmd    = Join-Path $ProjectDir "server.cmd"
+$hiddenVbs    = Join-Path $ProjectDir "server_hidden.vbs"  # runs server.cmd with no console window
 
 $currentUser  = "$env:USERDOMAIN\$env:USERNAME"
 $botPrincipal = New-ScheduledTaskPrincipal -UserId $currentUser -RunLevel Limited
 $botTrigger   = New-ScheduledTaskTrigger -AtLogOn -User $currentUser
-$botAction    = New-ScheduledTaskAction -Execute "cmd.exe" `
-                    -Argument "/c `"$serverCmd`"" `
+$botAction    = New-ScheduledTaskAction -Execute "wscript.exe" `
+                    -Argument "`"$hiddenVbs`"" `
                     -WorkingDirectory $ProjectDir
 $botSettings  = New-ScheduledTaskSettingsSet `
                     -ExecutionTimeLimit ([TimeSpan]::Zero) `
