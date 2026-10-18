@@ -10,7 +10,7 @@ import subprocess
 import time
 import logging
 from collections import deque
-from datetime import datetime, timezone
+from datetime import datetime, timedelta
 from flask import Flask, request, abort, jsonify
 import requests
 from dotenv import load_dotenv
@@ -21,7 +21,7 @@ app = Flask(__name__)
 
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 ALLOWED_USER_ID = int(os.environ["TELEGRAM_USER_ID"])
-LOG_PATH = r"C:\projects\QRemote\QRemote.log"
+LOG_PATH = r".\QRemote.log"
 
 HELP_TEXT = (
     "QRemote Bot\n\n"
@@ -40,8 +40,12 @@ HELP_TEXT = (
 
 class _JsonHandler(logging.FileHandler):
     def emit(self, record):
+        now = datetime.now().astimezone()
+        # Pacific-specific: astimezone() gives a fixed-offset tzinfo with no
+        # .dst() info, so derive PDT/PST from the UTC offset itself.
+        tz_abbr = "PDT" if now.utcoffset() == timedelta(hours=-7) else "PST"
         entry = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": now.strftime(f"%y-%m-%d %I:%M:%S%p {tz_abbr}"),
             "level": record.levelname,
             "message": record.getMessage(),
         }
@@ -222,7 +226,7 @@ def start_tunnel() -> subprocess.Popen | None:
     # Write to a file instead of a pipe — avoids Windows pipe-buffering issues
     with open(_CF_LOG, "w") as lf:
         proc = subprocess.Popen(
-            ["cloudflared", "tunnel", "--url", "http://localhost:5000"],
+            ["cloudflared", "tunnel", "--url", "http://localhost:5000", "--retries", "10"],
             stdout=lf,
             stderr=lf,
         )
@@ -263,9 +267,9 @@ def start_tunnel() -> subprocess.Popen | None:
         logger.warning("DNS not resolved locally after 10 s — attempting setWebhook anyway")
 
     webhook_url = f"{url}/webhook"
-    for attempt in range(1, 21):
+    for attempt in range(1, 11):
         try:
-            time.sleep(5)
+            time.sleep(10)
             resp = requests.post(
                 f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook",
                 json={"url": webhook_url},
@@ -277,11 +281,11 @@ def start_tunnel() -> subprocess.Popen | None:
                 send_message(ALLOWED_USER_ID, f"Bot online. Tunnel: {url}")
                 break
             else:
-                logger.warning(f"setWebhook attempt {attempt}/20 failed: {data}")
+                logger.warning(f"setWebhook attempt {attempt}/10 failed: {data}")
         except requests.RequestException as exc:
-            logger.warning(f"setWebhook attempt {attempt}/20 error: {exc}")
+            logger.warning(f"setWebhook attempt {attempt}/10 error: {exc}")
     else:
-        logger.error("setWebhook failed after 20 attempts — webhook not registered")
+        logger.error("setWebhook failed after 10 attempts — webhook not registered")
 
     return proc
 
