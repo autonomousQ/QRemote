@@ -93,26 +93,45 @@ Write-Host "  QRemoteBotStart task created (runs at logon, restarts on failure).
 # and writes the temp to %ProgramData%\QRemote\cpu_temp.json for the (non-admin) bot.
 # It runs from Program Files so a non-admin process can't swap the script it executes.
 Write-Step 7 "Creating scheduled task: QRemoteCpuTemp"
-if (-not (Test-Path "$env:ProgramFiles\PawnIO\PawnIOLib.dll")) {
-    Write-Host "  PawnIO driver not installed — skipping (winget install namazso.PawnIO)." -ForegroundColor Gray
+$pawnDll = "$env:ProgramFiles\PawnIO\PawnIOLib.dll"
+# PawnIO.Modules 0.2.11 module + SHA256 per CPU vendor
+$modules = @{
+    AuthenticAMD = @("AMDFamily17.bin", "DAE74615761B78BDF064DFB3E136252DDCC6FC727D88F14738D0E5800D427A91")
+    GenuineIntel = @("IntelMSR.bin",    "D6ED85D65AB17A22F813EF98207D6D537155EE2DED5976A21CB48413C9B92E5F")
+}
+$vendor  = (Get-CimInstance Win32_Processor | Select-Object -First 1).Manufacturer
+$pythonw = (Get-Command pythonw.exe -ErrorAction SilentlyContinue).Source
+if ($modules.ContainsKey($vendor) -and -not (Test-Path $pawnDll)) {
+    Write-Host "  Installing PawnIO sensor driver..."
+    winget install --id namazso.PawnIO --exact --accept-package-agreements --accept-source-agreements --disable-interactivity
+}
+if (-not $modules.ContainsKey($vendor)) {
+    Write-Host "  Unsupported CPU vendor '$vendor' — skipping (AMD Ryzen and Intel only)." -ForegroundColor Gray
+} elseif (-not (Test-Path $pawnDll)) {
+    Write-Host "  PawnIO install failed — skipping. Try: winget install namazso.PawnIO" -ForegroundColor Yellow
+} elseif (-not $pythonw -or $pythonw -like "*\WindowsApps\*") {
+    # The Microsoft Store python alias can't run as SYSTEM
+    Write-Host "  pythonw.exe not found (or only the Microsoft Store alias) — skipping. Install Python from python.org for all users." -ForegroundColor Yellow
 } else {
+    if ($pythonw -notlike "$env:ProgramFiles\*") {
+        Write-Host "  WARNING: $pythonw is user-writable; it will run as SYSTEM. An all-users Python install is safer." -ForegroundColor Yellow
+    }
     $helperDir = Join-Path $env:ProgramFiles "QRemote"
     New-Item -ItemType Directory -Force $helperDir | Out-Null
     Copy-Item (Join-Path $ProjectDir "cpu_temp_helper.py") $helperDir -Force
 
-    $modPath = Join-Path $helperDir "AMDFamily17.bin"
-    $modHash = "DAE74615761B78BDF064DFB3E136252DDCC6FC727D88F14738D0E5800D427A91"  # PawnIO.Modules 0.2.11
+    $modName, $modHash = $modules[$vendor]
+    $modPath = Join-Path $helperDir $modName
     if (-not (Test-Path $modPath) -or (Get-FileHash $modPath).Hash -ne $modHash) {
         $zip = Join-Path $env:TEMP "pawnio_modules.zip"
         Invoke-WebRequest "https://github.com/namazso/PawnIO.Modules/releases/download/0.2.11/release_0_2_11.zip" -OutFile $zip -UseBasicParsing
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         $z = [IO.Compression.ZipFile]::OpenRead($zip)
-        try { [IO.Compression.ZipFileExtensions]::ExtractToFile($z.GetEntry("AMDFamily17.bin"), $modPath, $true) } finally { $z.Dispose() }
+        try { [IO.Compression.ZipFileExtensions]::ExtractToFile($z.GetEntry($modName), $modPath, $true) } finally { $z.Dispose() }
         Remove-Item $zip
-        if ((Get-FileHash $modPath).Hash -ne $modHash) { Remove-Item $modPath; throw "AMDFamily17.bin hash mismatch" }
+        if ((Get-FileHash $modPath).Hash -ne $modHash) { Remove-Item $modPath; throw "$modName hash mismatch" }
     }
 
-    $pythonw = (Get-Command pythonw.exe).Source
     Register-ScheduledTask `
         -TaskName  "QRemoteCpuTemp" `
         -Action    (New-ScheduledTaskAction -Execute $pythonw -Argument "`"$helperDir\cpu_temp_helper.py`"") `

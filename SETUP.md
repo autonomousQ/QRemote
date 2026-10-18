@@ -7,6 +7,7 @@
 | Python 3.10+ | https://python.org/downloads |
 | pip | bundled with Python |
 | Cloudflare Tunnel (`cloudflared`) | `winget install Cloudflare.cloudflared` |
+| [PawnIO](https://github.com/namazso/PawnIO.Setup) sensor driver (AMD Ryzen or Intel, for CPU temp/power in `/sensors`) | installed by `setup.ps1`, or `winget install namazso.PawnIO` |
 | A Telegram bot token | created via [@BotFather](https://t.me/BotFather) |
 | Your Telegram user ID | obtained via [@userinfobot](https://t.me/userinfobot) |
 
