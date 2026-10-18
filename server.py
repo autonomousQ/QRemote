@@ -93,7 +93,7 @@ SAMPLE_SECS = 10
 HISTORY = deque(maxlen=360)  # ponytail: 1 h in memory, lost on restart; persist to disk if longer history matters
 STATS_KEY = secrets.token_urlsafe(16)  # new key each start; the link is only ever sent via Telegram
 TUNNEL_URL = None
-LHM_URL = "http://localhost:8085/data.json"
+CPU_TEMP_FILE = os.path.join(os.environ.get("ProgramData", r"C:\ProgramData"), "QRemote", "cpu_temp.json")
 _NO_WINDOW = subprocess.CREATE_NO_WINDOW
 
 
@@ -122,22 +122,14 @@ def gpu_stats() -> tuple:
         return None, None
 
 
-def _cpu_temps(node: dict, in_cpu: bool = False):
-    in_cpu = in_cpu or "cpu" in node.get("ImageURL", "") or "cpu" in node.get("SensorId", "")
-    value = node.get("Value", "")
-    if in_cpu and "°C" in value:
-        yield _num(value.split()[0].replace(",", "."))
-    for child in node.get("Children", []):
-        yield from _cpu_temps(child, in_cpu)
-
-
 def cpu_temp():
-    # Windows has no CPU temp API; needs LibreHardwareMonitor running as admin with
-    # Options → Remote Web Server → Run enabled (default port 8085).
+    # Windows has no CPU temp API and the PawnIO driver is admin-only, so cpu_temp_helper.py
+    # (SYSTEM task, see setup.ps1) writes the reading to a file; ignore it if the helper stopped.
     try:
-        temps = [t for t in _cpu_temps(requests.get(LHM_URL, timeout=2).json()) if t is not None]
-        return max(temps) if temps else None
-    except (requests.RequestException, ValueError):
+        with open(CPU_TEMP_FILE) as f:
+            data = json.load(f)
+        return data["cpu_temp"] if time.time() - data["t"] < 3 * SAMPLE_SECS else None
+    except (OSError, ValueError, KeyError):
         return None
 
 
@@ -168,7 +160,7 @@ def sensors_text() -> str:
         f"GPU  {f(s['gpu'], '%')}  ·  {f(s['gpu_temp'], '°C')}",
     ]
     if s["cpu_temp"] is None:
-        lines.append("(CPU temp needs LibreHardwareMonitor running as admin with its Remote Web Server on)")
+        lines.append("(CPU temp needs the QRemoteCpuTemp task from setup.ps1 running)")
     if TUNNEL_URL:
         lines.append(f"\nChart: {TUNNEL_URL}/stats?k={STATS_KEY}")
     return "\n".join(lines)

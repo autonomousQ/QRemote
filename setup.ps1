@@ -7,7 +7,7 @@ $EnvFile     = Join-Path $ProjectDir ".env"
 $LogFile     = Join-Path $ProjectDir "QRemote.log"
 
 function Write-Step([int]$n, [string]$msg) {
-    Write-Host "`n[$n/6] $msg" -ForegroundColor Yellow
+    Write-Host "`n[$n/7] $msg" -ForegroundColor Yellow
 }
 
 Write-Host "`n=== QRemote — Setup ===" -ForegroundColor Cyan
@@ -87,6 +87,43 @@ Register-ScheduledTask `
     -Settings  $botSettings `
     -Force | Out-Null
 Write-Host "  QRemoteBotStart task created (runs at logon, restarts on failure)." -ForegroundColor Green
+
+# ── 7. Scheduled task: CPU temperature helper ────────────────────────────────
+# The PawnIO sensor driver only accepts admin callers, so a small helper runs as SYSTEM
+# and writes the temp to %ProgramData%\QRemote\cpu_temp.json for the (non-admin) bot.
+# It runs from Program Files so a non-admin process can't swap the script it executes.
+Write-Step 7 "Creating scheduled task: QRemoteCpuTemp"
+if (-not (Test-Path "$env:ProgramFiles\PawnIO\PawnIOLib.dll")) {
+    Write-Host "  PawnIO driver not installed — skipping (winget install namazso.PawnIO)." -ForegroundColor Gray
+} else {
+    $helperDir = Join-Path $env:ProgramFiles "QRemote"
+    New-Item -ItemType Directory -Force $helperDir | Out-Null
+    Copy-Item (Join-Path $ProjectDir "cpu_temp_helper.py") $helperDir -Force
+
+    $modPath = Join-Path $helperDir "AMDFamily17.bin"
+    $modHash = "DAE74615761B78BDF064DFB3E136252DDCC6FC727D88F14738D0E5800D427A91"  # PawnIO.Modules 0.2.11
+    if (-not (Test-Path $modPath) -or (Get-FileHash $modPath).Hash -ne $modHash) {
+        $zip = Join-Path $env:TEMP "pawnio_modules.zip"
+        Invoke-WebRequest "https://github.com/namazso/PawnIO.Modules/releases/download/0.2.11/release_0_2_11.zip" -OutFile $zip -UseBasicParsing
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $z = [IO.Compression.ZipFile]::OpenRead($zip)
+        try { [IO.Compression.ZipFileExtensions]::ExtractToFile($z.GetEntry("AMDFamily17.bin"), $modPath, $true) } finally { $z.Dispose() }
+        Remove-Item $zip
+        if ((Get-FileHash $modPath).Hash -ne $modHash) { Remove-Item $modPath; throw "AMDFamily17.bin hash mismatch" }
+    }
+
+    $pythonw = (Get-Command pythonw.exe).Source
+    Register-ScheduledTask `
+        -TaskName  "QRemoteCpuTemp" `
+        -Action    (New-ScheduledTaskAction -Execute $pythonw -Argument "`"$helperDir\cpu_temp_helper.py`"") `
+        -Trigger   (New-ScheduledTaskTrigger -AtStartup) `
+        -Principal (New-ScheduledTaskPrincipal -UserId "SYSTEM" -RunLevel Highest) `
+        -Settings  (New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)) `
+        -Force | Out-Null
+    Stop-ScheduledTask -TaskName "QRemoteCpuTemp" -ErrorAction SilentlyContinue  # pick up a re-copied script
+    Start-ScheduledTask -TaskName "QRemoteCpuTemp"
+    Write-Host "  QRemoteCpuTemp task created and started (runs as SYSTEM at startup)." -ForegroundColor Green
+}
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 Write-Host "`n=== Setup complete! ===" -ForegroundColor Cyan
