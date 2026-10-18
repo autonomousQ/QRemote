@@ -30,7 +30,7 @@ HELP_TEXT = (
     "/cancel   — abort a pending shutdown or reboot\n"
     "/status   — confirm the bot is online + CPU/GPU readings\n"
     "/marco    — say hello\n"
-    "/sensors  — CPU/GPU usage and temperature + chart link\n"
+    "/sensors  — CPU/GPU usage, temp, power + chart link\n"
     "/tasks    — list all runnable Remote tasks\n"
     "/help     — show this message\n\n"
     "Any /command whose name matches a 'Remote<Command>' Task Scheduler task will run it.\n"
@@ -89,8 +89,8 @@ def list_remote_tasks() -> list[str]:
     return sorted(tasks)
 
 
-SAMPLE_SECS = 10
-HISTORY = deque(maxlen=360)  # ponytail: 1 h in memory, lost on restart; persist to disk if longer history matters
+SAMPLE_SECS = 20
+HISTORY = deque(maxlen=180)  # ponytail: 1 h in memory, lost on restart; persist to disk if longer history matters
 STATS_KEY = secrets.token_urlsafe(16)  # new key each start; the link is only ever sent via Telegram
 TUNNEL_URL = None
 CPU_TEMP_FILE = os.path.join(os.environ.get("ProgramData", r"C:\ProgramData"), "QRemote", "cpu_temp.json")
@@ -113,40 +113,42 @@ def _num(s: str):
 def gpu_stats() -> tuple:
     try:
         out = subprocess.run(
-            ["nvidia-smi", "--query-gpu=utilization.gpu,temperature.gpu", "--format=csv,noheader,nounits"],
+            ["nvidia-smi", "--query-gpu=utilization.gpu,temperature.gpu,power.draw", "--format=csv,noheader,nounits"],
             capture_output=True, text=True, timeout=5, creationflags=_NO_WINDOW,
         ).stdout.splitlines()[0]
-        usage, temp = out.split(",")
-        return _num(usage), _num(temp)
+        return tuple(_num(v) for v in out.split(","))
     except (OSError, IndexError, ValueError, subprocess.TimeoutExpired):
-        return None, None
+        return None, None, None
 
 
-def cpu_temp():
-    # Windows has no CPU temp API and the PawnIO driver is admin-only, so cpu_temp_helper.py
-    # (SYSTEM task, see setup.ps1) writes the reading to a file; ignore it if the helper stopped.
+def cpu_helper() -> dict:
+    # Windows has no CPU temp/power API and the PawnIO driver is admin-only, so cpu_temp_helper.py
+    # (SYSTEM task, see setup.ps1) writes the readings to a file; ignore it if the helper stopped.
     try:
         with open(CPU_TEMP_FILE) as f:
             data = json.load(f)
-        return data["cpu_temp"] if time.time() - data["t"] < 3 * SAMPLE_SECS else None
+        return data if time.time() - data["t"] < 3 * SAMPLE_SECS else {}
     except (OSError, ValueError, KeyError):
-        return None
+        return {}
 
 
 def sampler() -> None:
     prev = _cpu_times()
     while True:
-        time.sleep(SAMPLE_SECS)
+        time.sleep(SAMPLE_SECS if HISTORY else 1)  # first sample fast so /status and the chart work right after start
         cur = _cpu_times()
         d_idle, d_total = cur[0] - prev[0], cur[1] - prev[1]
         prev = cur
-        gpu, gpu_t = gpu_stats()
+        gpu, gpu_t, gpu_w = gpu_stats()
+        helper = cpu_helper()
         HISTORY.append({
             "t": int(time.time()),
             "cpu": round(100 * (1 - d_idle / d_total), 1) if d_total else None,
-            "cpu_temp": cpu_temp(),
+            "cpu_temp": helper.get("cpu_temp"),
+            "cpu_power": helper.get("cpu_power"),
             "gpu": gpu,
             "gpu_temp": gpu_t,
+            "gpu_power": gpu_w,
         })
 
 
@@ -156,8 +158,8 @@ def sensors_text() -> str:
     s = HISTORY[-1]
     f = lambda v, unit: "n/a" if v is None else f"{v:g} {unit}"
     lines = [
-        f"CPU  {f(s['cpu'], '%')}  ·  {f(s['cpu_temp'], '°C')}",
-        f"GPU  {f(s['gpu'], '%')}  ·  {f(s['gpu_temp'], '°C')}",
+        f"CPU  {f(s['cpu'], '%')}  ·  {f(s['cpu_temp'], '°C')}  ·  {f(s['cpu_power'], 'W')}",
+        f"GPU  {f(s['gpu'], '%')}  ·  {f(s['gpu_temp'], '°C')}  ·  {f(s['gpu_power'], 'W')}",
     ]
     if s["cpu_temp"] is None:
         lines.append("(CPU temp needs the QRemoteCpuTemp task from setup.ps1 running)")
@@ -170,19 +172,24 @@ STATS_PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>QRemote Sensors</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>:root{color-scheme:light dark}body{font:14px system-ui;margin:16px;background:Canvas;color:CanvasText}
-.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}.c{height:200px}</style>
-</head><body><h3>QRemote — last hour (refreshes every 10 s)</h3><div class="g">
-<div class="c"><canvas id="cpu"></canvas></div><div class="c"><canvas id="cpu_temp"></canvas></div>
-<div class="c"><canvas id="gpu"></canvas></div><div class="c"><canvas id="gpu_temp"></canvas></div></div>
+.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}.c{height:240px}</style>
+</head><body><h3>QRemote — last hour (refreshes every 20 s)</h3><div class="g">
+</div>
 <script>
-const S={cpu:["CPU usage %","#3b82f6",100],cpu_temp:["CPU temp °C","#ef4444"],gpu:["GPU usage %","#22c55e",100],gpu_temp:["GPU temp °C","#f59e0b"]};
-const C={};for(const[k,[label,color,max]]of Object.entries(S))C[k]=new Chart(k,{type:"line",
- data:{labels:[],datasets:[{label,data:[],borderColor:color,backgroundColor:color+"33",fill:true,pointRadius:0,spanGaps:false}]},
- options:{animation:false,maintainAspectRatio:false,scales:{x:{ticks:{maxTicksLimit:6,maxRotation:0}},y:{min:0,max}}}});
+// chart id: [title, CPU field, GPU field, y max]
+const S={usage:["Usage %","cpu","gpu",100],temp:["Temperature °C","cpu_temp","gpu_temp"],power:["Power W","cpu_power","gpu_power"]};
+const ds=(label,color)=>({label,data:[],borderColor:color,backgroundColor:color+"22",fill:true,spanGaps:false,
+ pointRadius:c=>c.chart.data.labels.length<3?3:0});  // a lone sample has no line to draw, so show it as a dot
+const g=document.querySelector(".g");for(const k in S)g.insertAdjacentHTML("beforeend",`<div class="c"><canvas id="${k}"></canvas></div>`);
+const C={};for(const[k,[title,,,max]]of Object.entries(S))C[k]=new Chart(k,{type:"line",
+ data:{labels:[],datasets:[ds("CPU","#3b82f6"),ds("GPU","#22c55e")]},
+ options:{animation:false,maintainAspectRatio:false,interaction:{mode:"index",intersect:false},
+  plugins:{title:{display:true,text:title}},scales:{x:{ticks:{maxTicksLimit:4,maxRotation:0}},y:{min:0,max}}}});
 async function tick(){const h=await (await fetch("stats.json"+location.search)).json();
  const labels=h.map(s=>new Date(s.t*1000).toLocaleTimeString());
- for(const k in C){C[k].data.labels=labels;C[k].data.datasets[0].data=h.map(s=>s[k]);C[k].update();}}
-tick();setInterval(tick,10000);
+ for(const[k,[,cpu,gpu]]of Object.entries(S)){const d=C[k].data;d.labels=labels;
+  d.datasets[0].data=h.map(s=>s[cpu]);d.datasets[1].data=h.map(s=>s[gpu]);C[k].update();}}
+tick();setInterval(tick,20000);
 </script></body></html>"""
 
 

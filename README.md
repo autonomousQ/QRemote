@@ -26,8 +26,8 @@ Sends commands through a **Cloudflare Tunnel** to a local **Flask webhook server
 | `/shutdown` | Schedules a shutdown in 60 seconds |
 | `/reboot` | Schedules a reboot in 60 seconds |
 | `/cancel` | Aborts the pending shutdown or reboot |
-| `/status` | Confirms the bot is online and shows CPU/GPU usage and temperature |
-| `/sensors` | Current CPU/GPU usage and temperature, plus a link to a last-hour chart page (CPU temp needs the [PawnIO](https://github.com/namazso/PawnIO.Setup) driver — `winget install namazso.PawnIO` — and the `QRemoteCpuTemp` task from `setup.ps1`) |
+| `/status` | Confirms the bot is online and shows CPU/GPU usage, temperature and power |
+| `/sensors` | Current CPU/GPU usage, temperature and power, plus a link to a last-hour chart page (CPU temp needs the [PawnIO](https://github.com/namazso/PawnIO.Setup) driver — `winget install namazso.PawnIO` — and the `QRemoteCpuTemp` task from `setup.ps1`) |
 | `/tasks` | Lists all `Remote*` Task Scheduler tasks and their bot commands |
 | `/help` | Shows this command list |
 | `/<name>` | Runs any `Remote<Name>` task you created (e.g. `/winver` → `RemoteWinver`) |
