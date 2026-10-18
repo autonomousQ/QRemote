@@ -28,7 +28,7 @@ HELP_TEXT = (
     "/shutdown — shut down this PC in 60 s\n"
     "/reboot   — reboot this PC in 60 s\n"
     "/cancel   — abort a pending shutdown or reboot\n"
-    "/status   — confirm the bot is online\n"
+    "/status   — confirm the bot is online + CPU/GPU readings\n"
     "/marco    — say hello\n"
     "/sensors  — CPU/GPU usage and temperature + chart link\n"
     "/tasks    — list all runnable Remote tasks\n"
@@ -308,7 +308,7 @@ def webhook():
     elif text == "/marco":
         reply = "Polo!"
     elif text == "/status":
-        reply = "Online."
+        reply = "Online.\n\n" + sensors_text()
     elif text == "/sensors":
         reply = sensors_text()
     elif text == "/tasks":
